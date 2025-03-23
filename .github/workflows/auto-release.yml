@@ -4,9 +4,6 @@ on:
   schedule:
     - cron: '0 */6 * * *' # Runs every 6 hours
   workflow_dispatch: # Allows manual triggering
-  push:
-    branches:
-      - auto-release
 
 jobs:
   check-and-release:
@@ -58,8 +55,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: "test-v${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}"
-          release_name: "Test Release for OTBR ${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}"
-          body: "Test release for Docker Hub tag ${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}."
-          draft: true
+          tag_name: "v${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}"
+          release_name: "Auto-Release for HA OTBR ${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}"
+          body: "Auto-release triggered by new HA OTBR ${{ steps.fetch-docker-tags.outputs.latest_docker_tag }} found on Docker Hub."
+          draft: false
           prerelease: false
