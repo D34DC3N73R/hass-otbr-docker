@@ -1,0 +1,62 @@
+name: Check Docker Tags and Create Release
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # Runs every 6 hours
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  check-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch latest Docker Hub tag
+        id: fetch-docker-tags
+        run: |
+          curl -s "https://hub.docker.com/v2/repositories/homeassistant/amd64-addon-otbr/tags/?page_size=50" > tags.json
+          LATEST_DOCKER_TAG=$(jq -r '[.results[] | .name | select(. != "latest") | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort_by(split(".") | map(tonumber)) | last' tags.json)
+          if [ -z "$LATEST_DOCKER_TAG" ]; then
+            echo "No valid versioned tag found on Docker Hub."
+            exit 1
+          fi
+          echo "Latest Docker Hub tag: $LATEST_DOCKER_TAG"
+          echo "latest_docker_tag=$LATEST_DOCKER_TAG" >> $GITHUB_OUTPUT
+
+      - name: Fetch latest GitHub release tag
+        id: fetch-github-tags
+        run: |
+          LATEST_GITHUB_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest" | jq -r '.tag_name | ltrimstr("v")')
+          if [ "$LATEST_GITHUB_TAG" == "null" ]; then
+            echo "No releases found in GitHub repo yet."
+            LATEST_GITHUB_TAG=""
+          fi
+          echo "Latest GitHub release tag: $LATEST_GITHUB_TAG"
+          echo "latest_github_tag=$LATEST_GITHUB_TAG" >> $GITHUB_OUTPUT
+
+      - name: Compare tags and decide
+        id: compare-tags
+        run: |
+          DOCKER_TAG=${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}
+          GITHUB_TAG=${{ steps.fetch-github-tags.outputs.latest_github_tag }}
+          if [ "$DOCKER_TAG" != "$GITHUB_TAG" ]; then
+            echo "Docker Hub tag ($DOCKER_TAG) does not match GitHub tag ($GITHUB_TAG). Creating new release."
+            echo "new_release_needed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Tags match. No new release needed."
+            echo "new_release_needed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        if: steps.compare-tags.outputs.new_release_needed == 'true'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: "test-v${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}"
+          release_name: "Test Release for OTBR ${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}"
+          body: "Test release for Docker Hub tag ${{ steps.fetch-docker-tags.outputs.latest_docker_tag }}."
+          draft: true
+          prerelease: false
